@@ -29,6 +29,7 @@ import {
   GitHubProduct,
   MINIMUM_SUPPORTED_GITHUB_ENTERPRISE_SERVER_VERSION_FOR_IMPORTS,
   getGitHubProductInformation,
+  supportsStatusFieldUpdates,
 } from '../github-products.js';
 import { POSTHOG_API_KEY, POSTHOG_HOST } from '../posthog.js';
 import { getGlobalIdAndUrlForProject } from '../projects.js';
@@ -1319,9 +1320,11 @@ command
 
       logger.info(`Created ${customFieldsToCreate.length} custom field(s)`);
 
-      // At the time of writing this, the GraphQL mutation 'updateProjectV2Field' is only available on
-      // GitHub.com and GitHub Enterprise Cloud with Data Residency
-      const shouldConfigureStatusField = githubProduct !== GitHubProduct.GHES;
+      // Check if the target supports Status field updates via GraphQL API
+      const shouldConfigureStatusField = supportsStatusFieldUpdates(
+        githubProduct,
+        gitHubEnterpriseServerVersion,
+      );
       if (shouldConfigureStatusField) {
         const sourceProjectStatusField = sourceProject.fields.nodes.find(
           (field) => field.name === 'Status',
