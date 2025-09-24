@@ -1,6 +1,7 @@
 import type { Octokit } from 'octokit';
 import { Endpoints } from '@octokit/types';
 import semver from 'semver';
+import type { Logger } from './logger.js';
 
 type DotcomMetaResponse = Endpoints['GET /meta']['response'];
 
@@ -27,6 +28,7 @@ export enum GitHubProduct {
 
 export const getGitHubProductInformation = async (
   octokit: Octokit,
+  logger?: Logger,
 ): Promise<
   | {
       githubProduct: GitHubProduct.GHES;
@@ -39,18 +41,34 @@ export const getGitHubProductInformation = async (
       gitHubEnterpriseServerVersion: undefined;
     }
 > => {
-  const githubProduct = getGitHubProductFromBaseUrl(
-    octokit.request.endpoint.DEFAULTS.baseUrl,
-  );
+  const baseUrl = octokit.request.endpoint.DEFAULTS.baseUrl;
+  const githubProduct = getGitHubProductFromBaseUrl(baseUrl, logger);
+
+  if (logger) {
+    logger.debug(`GitHub product detection - baseUrl: ${baseUrl}`);
+    logger.debug(`GitHub product detection - detected product: ${githubProduct}`);
+  }
 
   if (githubProduct === GitHubProduct.GHES) {
-    const gitHubEnterpriseServerVersion = await getGitHubEnterpriseServerVersion(octokit);
+    const gitHubEnterpriseServerVersion = await getGitHubEnterpriseServerVersion(
+      octokit,
+      logger,
+    );
+
+    if (logger) {
+      logger.debug(
+        `GitHub Enterprise Server version detected: ${gitHubEnterpriseServerVersion}`,
+      );
+    }
 
     return {
       githubProduct,
       gitHubEnterpriseServerVersion,
     };
   } else {
+    if (logger) {
+      logger.debug(`Non-GHES product detected, no version information needed`);
+    }
     return {
       githubProduct,
       gitHubEnterpriseServerVersion: undefined,
@@ -58,28 +76,62 @@ export const getGitHubProductInformation = async (
   }
 };
 
-const getGitHubProductFromBaseUrl = (baseUrl: string): GitHubProduct => {
+const getGitHubProductFromBaseUrl = (baseUrl: string, logger?: Logger): GitHubProduct => {
+  if (logger) {
+    logger.debug(`Determining GitHub product from baseUrl: ${baseUrl}`);
+  }
+
   if (isDotcomBaseUrl(baseUrl)) {
+    if (logger) {
+      logger.debug(`baseUrl matches GitHub.com pattern`);
+    }
     return GitHubProduct.DOTCOM;
   } else if (isGitHubEnterpriseCloudWithDataResidencyBaseUrl(baseUrl)) {
+    if (logger) {
+      logger.debug(`baseUrl matches GitHub Enterprise Cloud with Data Residency pattern`);
+    }
     return GitHubProduct.GITHUB_ENTERPRISE_CLOUD_WITH_DATA_RESIDENCY;
   } else {
+    if (logger) {
+      logger.debug(
+        `baseUrl does not match GitHub.com or GHEDR patterns, assuming GitHub Enterprise Server`,
+      );
+    }
     return GitHubProduct.GHES;
   }
 };
 
-const isDotcomBaseUrl = (baseUrl: string): boolean =>
-  baseUrl === 'https://api.github.com';
-
-const isGitHubEnterpriseCloudWithDataResidencyBaseUrl = (baseUrl: string): boolean => {
-  const { host } = new URL(baseUrl);
-  return host.endsWith('ghe.com');
+const isDotcomBaseUrl = (baseUrl: string): boolean => {
+  const result = baseUrl === 'https://api.github.com';
+  return result;
 };
 
-const getGitHubEnterpriseServerVersion = async (octokit: Octokit): Promise<string> => {
-  const {
-    data: { installed_version },
-  } = (await octokit.rest.meta.get()) as GhesMetaResponse;
+const isGitHubEnterpriseCloudWithDataResidencyBaseUrl = (baseUrl: string): boolean => {
+  try {
+    const { host } = new URL(baseUrl);
+    const result = host.endsWith('ghe.com');
+    return result;
+  } catch {
+    // If URL parsing fails, it's not a valid URL, so it can't be GHEDR
+    return false;
+  }
+};
+
+const getGitHubEnterpriseServerVersion = async (
+  octokit: Octokit,
+  logger?: Logger,
+): Promise<string> => {
+  if (logger) {
+    logger.debug(`Fetching GitHub Enterprise Server version from API`);
+  }
+
+  const metaResponse = (await octokit.rest.meta.get()) as GhesMetaResponse;
+  const installed_version = metaResponse.data.installed_version;
+
+  if (logger) {
+    logger.debug(`Raw API response for installed_version: "${installed_version}"`);
+    logger.debug(`Type of installed_version: ${typeof installed_version}`);
+  }
 
   return installed_version;
 };
@@ -87,19 +139,50 @@ const getGitHubEnterpriseServerVersion = async (octokit: Octokit): Promise<strin
 export const supportsAutomaticStatusFieldMigration = (
   githubProduct: GitHubProduct,
   gitHubEnterpriseServerVersion?: string,
+  logger?: Logger,
 ): boolean => {
+  if (logger) {
+    logger.debug(`Checking automatic Status field migration support`);
+    logger.debug(`GitHub product: ${githubProduct}`);
+    logger.debug(`GHES version: ${gitHubEnterpriseServerVersion || 'undefined'}`);
+    logger.debug(
+      `Minimum required GHES version: ${MINIMUM_SUPPORTED_GITHUB_ENTERPRISE_SERVER_VERSION_FOR_STATUS_FIELD_MIGRATION}`,
+    );
+  }
+
   // GitHub.com and GitHub Enterprise Cloud with Data Residency always support it
   if (githubProduct !== GitHubProduct.GHES) {
+    if (logger) {
+      logger.debug(
+        `Non-GHES product detected, automatic Status field migration is supported`,
+      );
+    }
     return true;
   }
 
   // For GHES, check if version is 3.17.0 or later
   if (!gitHubEnterpriseServerVersion) {
+    if (logger) {
+      logger.debug(
+        `GHES detected but no version information available, automatic Status field migration NOT supported`,
+      );
+    }
     return false;
   }
 
-  return semver.gte(
+  const isSupported = semver.gte(
     gitHubEnterpriseServerVersion,
     MINIMUM_SUPPORTED_GITHUB_ENTERPRISE_SERVER_VERSION_FOR_STATUS_FIELD_MIGRATION,
   );
+
+  if (logger) {
+    logger.debug(
+      `semver.gte("${gitHubEnterpriseServerVersion}", "${MINIMUM_SUPPORTED_GITHUB_ENTERPRISE_SERVER_VERSION_FOR_STATUS_FIELD_MIGRATION}") = ${isSupported}`,
+    );
+    logger.debug(
+      `Automatic Status field migration is ${isSupported ? 'SUPPORTED' : 'NOT SUPPORTED'}`,
+    );
+  }
+
+  return isSupported;
 };
