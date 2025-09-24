@@ -83,12 +83,15 @@ const getGitHubProductFromBaseUrl = (baseUrl: string, logger?: Logger): GitHubPr
 
   if (isDotcomBaseUrl(baseUrl)) {
     if (logger) {
-      logger.debug(`baseUrl matches GitHub.com pattern`);
+      logger.debug(`baseUrl matches GitHub.com pattern (https://api.github.com)`);
     }
     return GitHubProduct.DOTCOM;
   } else if (isGitHubEnterpriseCloudWithDataResidencyBaseUrl(baseUrl)) {
     if (logger) {
-      logger.debug(`baseUrl matches GitHub Enterprise Cloud with Data Residency pattern`);
+      const { host } = new URL(baseUrl);
+      logger.debug(
+        `baseUrl matches GitHub Enterprise Cloud with Data Residency pattern (host "${host}" matches pattern ^api\\.[a-zA-Z0-9-]+\\.ghe\\.com$)`,
+      );
     }
     return GitHubProduct.GITHUB_ENTERPRISE_CLOUD_WITH_DATA_RESIDENCY;
   } else {
@@ -109,7 +112,9 @@ const isDotcomBaseUrl = (baseUrl: string): boolean => {
 const isGitHubEnterpriseCloudWithDataResidencyBaseUrl = (baseUrl: string): boolean => {
   try {
     const { host } = new URL(baseUrl);
-    const result = host.endsWith('ghe.com');
+    // More strict validation: ensure it ends with .ghe.com (not just ghe.com)
+    // and has the expected subdomain structure for GHEDR
+    const result = /^api\.[a-zA-Z0-9-]+\.ghe\.com$/.test(host);
     return result;
   } catch {
     // If URL parsing fails, it's not a valid URL, so it can't be GHEDR
@@ -170,19 +175,32 @@ export const supportsAutomaticStatusFieldMigration = (
     return false;
   }
 
-  const isSupported = semver.gte(
-    gitHubEnterpriseServerVersion,
-    MINIMUM_SUPPORTED_GITHUB_ENTERPRISE_SERVER_VERSION_FOR_STATUS_FIELD_MIGRATION,
-  );
+  try {
+    const isSupported = semver.gte(
+      gitHubEnterpriseServerVersion,
+      MINIMUM_SUPPORTED_GITHUB_ENTERPRISE_SERVER_VERSION_FOR_STATUS_FIELD_MIGRATION,
+    );
 
-  if (logger) {
-    logger.debug(
-      `semver.gte("${gitHubEnterpriseServerVersion}", "${MINIMUM_SUPPORTED_GITHUB_ENTERPRISE_SERVER_VERSION_FOR_STATUS_FIELD_MIGRATION}") = ${isSupported}`,
-    );
-    logger.debug(
-      `Automatic Status field migration is ${isSupported ? 'SUPPORTED' : 'NOT SUPPORTED'}`,
-    );
+    if (logger) {
+      logger.debug(
+        `semver.gte("${gitHubEnterpriseServerVersion}", "${MINIMUM_SUPPORTED_GITHUB_ENTERPRISE_SERVER_VERSION_FOR_STATUS_FIELD_MIGRATION}") = ${isSupported}`,
+      );
+      logger.debug(
+        `Automatic Status field migration is ${isSupported ? 'SUPPORTED' : 'NOT SUPPORTED'}`,
+      );
+    }
+
+    return isSupported;
+  } catch (error) {
+    if (logger) {
+      logger.debug(
+        `Error parsing version "${gitHubEnterpriseServerVersion}": ${error.message}`,
+      );
+      logger.debug(
+        `Due to version parsing error, automatic Status field migration NOT supported`,
+      );
+    }
+    // If we can't parse the version, assume it's not supported for safety
+    return false;
   }
-
-  return isSupported;
 };
