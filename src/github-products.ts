@@ -192,9 +192,10 @@ export const supportsAutomaticStatusFieldMigration = (
 
     return isSupported;
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     if (logger) {
       logger.debug(
-        `Error parsing version "${gitHubEnterpriseServerVersion}": ${error.message}`,
+        `Error parsing version "${gitHubEnterpriseServerVersion}": ${errorMessage}`,
       );
       logger.debug(
         `Due to version parsing error, automatic Status field migration NOT supported`,
