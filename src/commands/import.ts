@@ -1124,7 +1124,7 @@ command
       }
 
       const { githubProduct, gitHubEnterpriseServerVersion } =
-        await getGitHubProductInformation(octokit);
+        await getGitHubProductInformation(octokit, logger);
 
       if (githubProduct === GitHubProduct.GHES) {
         if (
@@ -1322,9 +1322,14 @@ command
 
       // The GraphQL mutation 'updateProjectV2Field' is available on GitHub.com,
       // GitHub Enterprise Cloud with Data Residency, and GitHub Enterprise Server 3.17+
+      logger.debug('Determining if automatic Status field migration is supported...');
       const shouldConfigureStatusField = supportsAutomaticStatusFieldMigration(
         githubProduct,
         gitHubEnterpriseServerVersion,
+        logger,
+      );
+      logger.info(
+        `Automatic Status field migration is ${shouldConfigureStatusField ? 'supported' : 'NOT supported'} for this GitHub instance`,
       );
       if (shouldConfigureStatusField) {
         const sourceProjectStatusField = sourceProject.fields.nodes.find(

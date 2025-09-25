@@ -391,10 +391,6 @@ jobs:
       [
         'package',
         'test_and_lint',
-        'end_to_end_tests_linux_ghes_317',
-        'end_to_end_tests_linux_ghes_316',
-        'end_to_end_tests_linux_ghes_315',
-        'end_to_end_tests_linux_ghes_314',
         'end_to_end_tests_windows',
         'end_to_end_tests_linux',
         'end_to_end_tests_macos',
